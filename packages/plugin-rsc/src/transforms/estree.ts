@@ -1,9 +1,4 @@
-import type {} from 'estree'
+import type { Rollup } from 'vite'
 
-// rollup ast has node position
-declare module 'estree' {
-  interface BaseNode {
-    start: number
-    end: number
-  }
-}
+export type Node = Rollup.AstNode
+export type Program = Rollup.ProgramNode
