@@ -913,6 +913,58 @@ function defineTest(f: Fixture) {
     )
   })
 
+  test('React.cache API', async ({ page }) => {
+    await page.goto(f.url())
+    await waitForHydration(page)
+
+    // Verify React.cache section is present
+    const reactCacheSection = page.getByTestId('test-react-cache')
+    await expect(reactCacheSection).toBeVisible()
+
+    // Test cached data fetching - multiple components with same ID should share cache
+    const user1Elements = page.getByTestId('react-cache-fetch-user-1')
+    await expect(user1Elements).toHaveCount(2)
+
+    // Both user-1 elements should have the same cached timestamp
+    const user1Texts = await user1Elements.allTextContents()
+    expect(user1Texts[0]).toEqual(user1Texts[1]) // Should be identical due to caching
+
+    // Different user ID should have different data
+    const user2Element = page.getByTestId('react-cache-fetch-user-2')
+    await expect(user2Element).toBeVisible()
+    const user2Text = await user2Element.textContent()
+    expect(user2Text).toContain('User user-2')
+    expect(user2Text).not.toEqual(user1Texts[0])
+
+    // Test cached expensive computation
+    const testDataElements = page.getByTestId(
+      'react-cache-computation-test-data',
+    )
+    await expect(testDataElements).toHaveCount(2)
+
+    // Both test-data elements should have identical results
+    const computationTexts = await testDataElements.allTextContents()
+    expect(computationTexts[0]).toEqual(computationTexts[1])
+    expect(computationTexts[0]).toContain('Computed result for test-data')
+
+    // Different data should produce different results
+    const differentDataElement = page.getByTestId(
+      'react-cache-computation-different-data',
+    )
+    await expect(differentDataElement).toBeVisible()
+    const differentDataText = await differentDataElement.textContent()
+    expect(differentDataText).toContain('Computed result for different-data')
+    expect(differentDataText).not.toEqual(computationTexts[0])
+
+    // Verify React.cache is working by checking that function call counts are present
+    // and that caching behavior is working (identical results for same inputs)
+    expect(user1Texts[0]).toMatch(/Fetch calls: \d+/) // Should show some number of fetch calls
+    expect(computationTexts[0]).toMatch(/Computation calls: \d+/) // Should show some number of computation calls
+
+    // The key test: verify that React.cache is producing identical results for identical inputs
+    // This is the core functionality we want to test
+  })
+
   test('hydration mismatch', async ({ page }) => {
     const errors: Error[] = []
     page.on('pageerror', (error) => {

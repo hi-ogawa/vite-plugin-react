@@ -16,6 +16,10 @@ export function TestReactCache() {
   )
 }
 
+// Global counters for tracking function calls
+let fetchUserDataCallCount = 0
+let expensiveComputationCallCount = 0
+
 // Mock data fetching function
 async function fetchUserData(id: string) {
   fetchUserDataCallCount++
@@ -42,9 +46,6 @@ function expensiveComputation(data: string) {
 // Create cached versions using React.cache
 const cachedFetchUserData = React.cache(fetchUserData)
 const cachedExpensiveComputation = React.cache(expensiveComputation)
-
-let fetchUserDataCallCount = 0
-let expensiveComputationCallCount = 0
 
 async function ReactCacheDataFetch({ id }: { id: string }) {
   const userData = await cachedFetchUserData(id)
