@@ -1,4 +1,4 @@
-import { cache } from 'react'
+import React from 'react'
 
 export function TestReactCache() {
   return (
@@ -40,8 +40,8 @@ function expensiveComputation(data: string) {
 }
 
 // Create cached versions using React.cache
-const cachedFetchUserData = cache(fetchUserData)
-const cachedExpensiveComputation = cache(expensiveComputation)
+const cachedFetchUserData = React.cache(fetchUserData)
+const cachedExpensiveComputation = React.cache(expensiveComputation)
 
 let fetchUserDataCallCount = 0
 let expensiveComputationCallCount = 0

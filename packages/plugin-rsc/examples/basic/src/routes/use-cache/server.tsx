@@ -1,4 +1,3 @@
-import { cache } from 'react'
 import { revalidateCache } from '../../framework/use-cache-runtime'
 
 export function TestUseCache() {
