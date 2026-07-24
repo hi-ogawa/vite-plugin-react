@@ -10,70 +10,65 @@
 
 ## Question
 
-Does the current plugin-rsc `"use cache"` example need a Next.js-style shared traversal to support an exported inline `"use cache"` function inside a module-level `"use server"` file, or can the existing independent transforms compose safely?
+Can independent directive-owner plugins correctly compose a module-level `"use server"` default with an inline custom Server Function override, or must one transform classify both roles before generating exports, wrappers, proxies, and server-reference claims?
 
-The representative source shape is used in [the-platform-press `app/[locale]/category/actions.ts`](https://github.com/vercel-partner-solutions/the-platform-press/blob/0fdee98ad98766f36baf948a48d0df5705b27811/app/%5Blocale%5D/category/actions.ts#L1-L35):
+The focused plugin-rsc prototype extends the `custom-server-function` E2E with this shape:
 
 ```js
 'use server'
 
-export async function cached(value) {
-  'use cache'
-  return value
+export async function getCount() {
+  return count
 }
 
-export async function action(value) {
-  return value
+export async function increment() {
+  'use custom-server'
+  count++
+}
+
+export async function reset() {
+  count = 0
 }
 ```
 
-This investigation concerns the current server-local cache example. It does not evaluate richer transform APIs proposed elsewhere or require cached functions to become independently addressable Server References.
+`"use custom-server"` stands in for a framework-owned directive such as `"use cache"`. The important semantic is that the inline directive overrides the module-level default for one exported function while the remaining exports retain built-in `"use server"` ownership.
 
 ## Conclusion
 
-The supported representative case does not require a shared traversal.
+The current independent transforms do not compose this override correctly in either plugin order.
 
-The current transforms compose correctly when the cache hoister runs before the built-in server transform, which is already the example's configured order. The cache transform first replaces the exported cached function with an exported cache-wrapped binding and keeps its hoisted implementation private through `noExport`. The built-in module-level `"use server"` transform then registers that cache-wrapped binding as the exported Server Reference.
+Running the custom transform first preserves the inline role, but it exports and claims a generated hoist. The subsequent built-in module-level transform treats every resulting export as `"use server"`, including that generated hoist. Claim aggregation then rejects the same reference export being owned by both plugins. Even without that check, the built-in pass would re-register the custom wrapper and erase the intended single-owner role distinction.
 
-The reverse RSC order is unsound. The server transform first schedules reassignment of the exported function, while the later cache transform replaces the function declaration with a `const`. The resulting code parses but attempts to reassign that `const` at module evaluation.
+Running the built-in transform first prevents the duplicate generated-export claim, but its generated registration assignment assumes the original function binding remains reassignable. The later custom hoister replaces that declaration with a `const`, so module evaluation attempts to reassign a `const`. The non-RSC built-in proxy pass also consumes the function body before the custom plugin can select different proxy ownership.
 
-The minimum contract is therefore:
+The required invariant is stronger than transform order:
 
-> A server-local inline cache transform that rewrites an exported function binding must run before plugin-rsc's module-level `"use server"` server transform.
+> Module defaults and inline overrides must be classified together before any pass commits export names, wrapper targets, client proxies, or server-reference ownership.
 
-A shared traversal would become relevant if plugin-rsc wanted symmetric module-level `"use cache"` semantics, per-function role overrides owned by one transform, or unified legality validation. Those are not requirements of the current example.
+The recommended direction is one role-aware traversal with directive-owner callbacks. This does not require plugin-rsc to hardcode `"use cache"` semantics. The built-in and framework-owned directives can provide separate runtime behavior while sharing syntax classification and final export ownership.
 
 ## Next.js One-pass Baseline
 
-Next.js handles actions and cache functions in one `server_actions` visitor. It first records and removes the module directive in [`get_directive_for_module`](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/src/transforms/server_actions.rs#L453-L475), then pre-collects exports and performs one main statement pass in [`visit_mut_module_items`](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/src/transforms/server_actions.rs#L1741-L1755).
+Next.js implements actions and cache functions in one `server_actions` visitor. It records and removes the module directive in [`get_directive_for_module`](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/src/transforms/server_actions.rs#L453-L475), then pre-collects exports and performs one main statement pass in [`visit_mut_module_items`](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/src/transforms/server_actions.rs#L1741-L1755).
 
 For each function, an inline directive takes precedence. Only an exported function without its own directive inherits the file directive in [`get_directive_for_function`](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/src/transforms/server_actions.rs#L413-L450).
 
 Consequently:
 
 - A `"use server"` file may contain an inline `"use cache"` function. [Fixture 37](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/tests/fixture/server-actions/server-graph/37/input.js) covers a local cached function, while [fixture 48](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/tests/fixture/server-actions/server-graph/48/input.js#L1-L45) covers an exported cached override among ordinary action exports.
-- A default export may similarly override a `"use server"` file with inline `"use cache"`, as shown by [fixture 49](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/tests/fixture/server-actions/server-graph/49/input.js).
+- A default export may override a `"use server"` file with inline `"use cache"`, as shown by [fixture 49](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/tests/fixture/server-actions/server-graph/49/input.js).
 - The reverse is legal. Inline `"use server"` functions override a module-level `"use cache"` role in [fixture 51](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/tests/fixture/server-actions/server-graph/51/input.js).
 - Both directives in one directive prologue are rejected by the shared [`DirectiveVisitor`](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/src/transforms/server_actions.rs#L3418-L3490).
 
-For the representative exported override, the normalized output is:
+For an exported cache override among ordinary actions, the normalized result is:
 
 ```js
 const H = async function cached(value) {
   return value
 }
 
-export var CACHE_REF = React.cache(function cached() {
-  return cache(
-    'default',
-    CACHE_ID,
-    0,
-    H,
-    Array.prototype.slice.call(arguments, 0, 1),
-  )
-})
+export var CACHE_REF = cacheWrapper(H, CACHE_ID)
 registerServerReference(CACHE_REF, CACHE_ID, null)
-
 export var cached = CACHE_REF
 
 export async function action(value) {
@@ -82,124 +77,123 @@ export async function action(value) {
 registerServerReference(action, ACTION_ID, null)
 ```
 
-The cache override is classified before the action-file post-pass. It is removed from ordinary action-export registration and replaced by the cache wrapper and cache reference, as the exact [fixture 48 output](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/tests/fixture/server-actions/server-graph/48/output.js#L27-L50) demonstrates.
+The cache override is classified before the action-file post-pass. It is removed from ordinary action export registration and replaced by the cache wrapper and cache reference, as [fixture 48's exact output](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/crates/next-custom-transforms/tests/fixture/server-actions/server-graph/48/output.js#L27-L50) demonstrates.
 
-## Current Vite Pipeline
+## Intended Vite Composition Prototype
 
-The example installs `vitePluginUseCache()` before `rsc()` in [examples/use-cache/vite.config.ts](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/examples/use-cache/vite.config.ts#L6-L18).
+The current custom Server Function example installs `customServerFunctionPlugin()` before `rsc()` in [`vite.config.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/examples/custom-server-function/vite.config.ts#L1-L8).
 
-The cache plugin applies `transformHoistInlineDirective` with `noExport: true` in [vite.config.ts](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/examples/use-cache/vite.config.ts#L20-L44). The hoister moves the implementation, creates the cache-wrapped replacement at the original declaration site, and leaves the generated implementation unexported in [`hoist.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/hoist.ts#L94-L130).
+The custom plugin mirrors the built-in environment split. In the RSC environment it applies `transformWrapExport` for a module-level custom directive or `transformHoistInlineDirective` for inline custom directives, then contributes the returned names as its server-reference claim. In client and SSR environments it proxies only module-level custom-directive exports. This pipeline is implemented in [`custom-server-function-plugin.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/examples/custom-server-function/custom-server-function-plugin.ts#L18-L102).
 
-The built-in server transform chooses `transformWrapExport` for any module containing a top-level `"use server"` directive in [`server-action.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/server-action.ts#L30-L39).
+The built-in `rsc:use-server` plugin runs afterward. A top-level `"use server"` makes `transformServerActionServer` choose `transformWrapExport`, which wraps every export rather than inspecting inline directives in [`server-action.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/server-action.ts#L30-L39).
 
-These transforms do not share directive state. Their composition is determined by generated JavaScript bindings and plugin order.
+PR #1310's claim manager correctly aggregates disjoint exports from different owners and rejects duplicate ownership in [`server-reference.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/plugins/server-reference.ts#L69-L124). That solves metadata lifecycle after ownership has been decided. It does not decide which transform owns an export.
 
-## Focused Order Comparison
+## Custom Then Built-in
 
-### Cache then server
-
-Normalized RSC output:
+The custom inline hoister produces this normalized intermediate form:
 
 ```js
 'use server'
 
-let cached = CACHE(H)
-
-async function action(value) {
-  return value
+export async function getCount() {
+  return count
 }
 
-async function H(value) {
-  'use cache'
-  return value
+export const increment = CUSTOM_REGISTER(G)
+
+export async function reset() {
+  count = 0
 }
 
-cached = SERVER(cached, 'cached')
-export { cached }
-
-action = SERVER(action, 'action')
-export { action }
+export async function G() {
+  'use custom-server'
+  count++
+}
 ```
 
-This order is valid. The cache transform emits the exported `cached` replacement first. The subsequent export wrapper changes an exported `const` declaration to `let` before appending its registration assignment in [`wrap-export.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/wrap-export.ts#L137-L168).
+The custom plugin claims `G`, because `transformHoistInlineDirective` returns generated hoist names. The relevant generation and replacement occur in [`hoist.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/hoist.ts#L94-L137).
 
-The final exported and registered value is `CACHE(H)`, so a Server Function invocation reaches the cache wrapper. `H` remains module-private because the example selected `noExport: true`.
-
-### Server then cache
-
-Normalized RSC output:
+The built-in file-level pass then wraps all four exports:
 
 ```js
-'use server'
-
-const cached = CACHE(H)
-
-async function action(value) {
-  return value
-}
-
-cached = SERVER(cached, 'cached')
-export { cached }
-
-action = SERVER(action, 'action')
-export { action }
-
-async function H(value) {
-  'use cache'
-  return value
-}
+getCount = BUILTIN_REGISTER(getCount, 'getCount')
+increment = BUILTIN_REGISTER(increment, 'increment')
+reset = BUILTIN_REGISTER(reset, 'reset')
+G = BUILTIN_REGISTER(G, 'G')
 ```
 
-This output is syntactically valid but fails during module evaluation because `cached = SERVER(...)` reassigns the `const cached` introduced by the later cache transform.
+Its claim contains `getCount`, `increment`, `reset`, and `G`. Aggregation detects that `G` is already owned by the custom plugin and throws the explicit duplicate-owner error implemented in [`server-reference.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/plugins/server-reference.ts#L112-L118).
 
-The earliest failure is not hidden directive information. `transformWrapExport` preserves the function body, so the second transform still finds `"use cache"`. The failure is an unstated generated-binding contract: the first transform assumes its target remains reassignable, while the second transform changes the declaration form after that assumption was encoded.
+This is the earliest hard failure. Relaxing the collision would not make the output correct because the built-in pass would still register the custom wrapper and generated implementation as built-in references.
 
-### Client and SSR proxy layers
+## Built-in Then Custom
 
-For a module-level `"use server"` file, both orders reduce the representative exports to the same proxies:
+Reversing plugin order lets the built-in pass claim only the original source exports, but it appends assignments such as:
 
 ```js
-export const cached = PROXY('cached')
-export const action = PROXY('action')
+increment = BUILTIN_REGISTER(increment, 'increment')
+export { increment }
 ```
 
-When cache hoisting runs first, the built-in proxy transform removes the generated implementation and other non-export nodes. When proxying runs first, it removes the original function bodies, so the later cache transform has no inline directive left to process. The removal behavior is explicit in [`proxy-export.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/proxy-export.ts#L147-L153).
+The later custom hoister preserves the inline directive but replaces the original function declaration with:
 
-Thus the material order constraint is in the RSC implementation transform, not the proxy output.
+```js
+const increment = CUSTOM_REGISTER(G)
+```
 
-## Fixture Matrix
+The resulting module parses but fails when it evaluates the built-in assignment to `const increment`. `transformWrapExport`'s generated assignment contract is visible in [`wrap-export.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/wrap-export.ts#L64-L98), while the hoister's `const` replacement is generated in [`hoist.ts`](https://github.com/vitejs/vite-plugin-react/blob/31cdbb82219b6b637eee338a3492f735c78116bf/packages/plugin-rsc/src/transforms/hoist.ts#L113-L130).
 
-| Source shape                                                | Next.js                                    | Current Vite cache-before-server                                 | Current Vite server-before-cache                                    |
-| ----------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `"use server"` file, exported inline `"use cache"` function | Cache role overrides inherited action role | Works; exported Server Reference targets `CACHE(H)`              | Parses but reassigns a generated `const`                            |
-| `"use server"` file, ordinary exported function             | Registered as action                       | Registered as action                                             | Registered as action                                                |
-| `"use server"` file, local inline `"use cache"` helper      | One traversal hoists cache helper          | Cache hoister runs before export wrapping; no ownership conflict | Directive remains discoverable, but reverse order offers no benefit |
-| `"use cache"` file, inline `"use server"` function          | Action role overrides inherited cache role | Not modeled by the current example plugin                        | Not modeled by the current example plugin                           |
-| Both directives in one function prologue                    | Rejected                                   | No shared multiple-role validation                               | No shared multiple-role validation                                  |
+The reverse order also cannot provide the desired client and SSR behavior. The built-in proxy transform sees a module-level `"use server"` file and removes the function bodies before the custom plugin can classify `increment` as custom-owned. The browser therefore receives a built-in proxy for every source export.
 
-## Capability And Failure Classification
+## Ownership Matrix
 
-| Concern                                                     | Result                                                | Classification                             |
-| ----------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
-| Preserve inline cache directive for the representative case | Both RSC orders preserve enough source to discover it | No shared traversal required               |
-| Register the cache-wrapped source export                    | Correct with cache-before-server                      | Existing transforms plus ordering contract |
-| Keep raw cache implementation private                       | Correct through `noExport: true`                      | Existing cache integration choice          |
-| Reverse transform order                                     | Generated `const` is reassigned                       | Composition-contract failure               |
-| Symmetric file-level cache/action overrides                 | Supported by Next.js, absent from current demo model  | Outside current example scope              |
-| Reject conflicting directives in one prologue               | Centralized in Next.js, not coordinated in Vite       | Validation follow-up                       |
+| Export        | Source role                            | Desired owner | Custom-first result                               | Built-in-first result                                                                    |
+| ------------- | -------------------------------------- | ------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `getCount`    | Inherited `"use server"`               | Built-in      | Built-in                                          | Built-in                                                                                 |
+| `increment`   | Inline custom override                 | Custom        | Wrapped by custom, then re-registered by built-in | Custom wrapper generated, then assigned by built-in through invalid `const` reassignment |
+| `reset`       | Inherited `"use server"`               | Built-in      | Built-in                                          | Built-in                                                                                 |
+| Generated `G` | Custom implementation/reference helper | Custom only   | Claimed by both owners                            | Custom claim is disjoint, but source binding and proxy ownership are already wrong       |
+
+## Why Claims Are Not A Transform-composition Protocol
+
+The claim manager operates after each plugin has generated code and selected export names. It can:
+
+- Preserve disjoint metadata from independent owners.
+- Remove only one owner's stale claim during HMR.
+- Reject incompatible module identity or duplicate export ownership.
+
+It cannot:
+
+- Tell the built-in syntax transform that one source export has an inline override.
+- Prevent a later transform from wrapping an earlier transform's generated helper export.
+- Select the correct client proxy ID for an overridden source export.
+- Reconcile incompatible binding rewrites after code generation.
+
+The duplicate-owner error is therefore useful evidence that syntax ownership was never coordinated, not a claim-manager limitation to relax.
 
 ## Recommendation
 
-Preserve the independent transforms and document/enforce their ordering for this server-local example. Do not introduce a shared action/cache traversal based on the representative mixed-directive case alone.
+Use one role-aware traversal for modules where file-level defaults and inline Server Function directives may mix.
 
-The smallest useful hardening is for the example cache plugin to make its dependency on `rsc:use-server` ordering explicit rather than relying only on array placement. If this composition becomes supported API rather than example code, the contract should state that a transform replacing exported function bindings must run before the built-in server implementation transform.
+The traversal should:
 
-Do not generalize this conclusion to a future module-level `"use cache"` implementation. A transform that wants Next.js's symmetric file-role inheritance, inline role overrides, and shared conflict validation may benefit from one role-aware traversal or a directive-neutral intermediate representation. That is a larger semantic target than the current generic hoist-and-wrap demo.
+1. Parse the module directive once.
+2. Classify each function as an explicit inline role or an inherited module role.
+3. Validate conflicting directives before code generation.
+4. Assign one runtime owner and one reference identity to each callable.
+5. Generate implementation wrappers and final exports from that classification.
+6. Return disjoint claim sets for the built-in and custom owners.
+7. Generate client and SSR proxies from the same role map.
+
+Directive-specific semantics should remain external. A custom owner can provide matching, wrapping, capture encoding, and runtime expressions, while the shared traversal owns role precedence and export code generation. This is narrower than making `"use cache"` a built-in plugin-rsc directive.
+
+A directive-neutral intermediate representation could implement the same architecture, but two complete source-to-source passes need such an ownership handoff before either emits code. Merely documenting plugin order is insufficient.
+
+## Scope
+
+This analysis does not evaluate cache storage, replay, invalidation, handler policy, PR #1246, or broader declaration syntax. Cross-environment cache transport is covered separately in [FINDINGS-CACHE-SERVER-REFERENCE-TRANSPORT.md](./FINDINGS-CACHE-SERVER-REFERENCE-TRANSPORT.md).
 
 ## Verification
 
-The Next.js conclusions use the pinned transform source and committed server-action fixtures listed above.
-
-The Vite order comparison used a temporary focused transform test against commit `31cdbb82219b6b637eee338a3492f735c78116bf`. It applied the current example's `transformHoistInlineDirective({ noExport: true })`, the built-in `transformServerActionServer`, and the built-in proxy transform in both orders. All four outputs parsed; the reverse RSC output contained the demonstrated `const` reassignment. The temporary test was removed after inspection, and no implementation or test files remain modified.
-
-Cache storage, result serialization, replay, invalidation, custom handlers, PR #1246, and cross-environment cache Server Reference design were not evaluated.
+The Next.js findings use committed transform fixtures at the pinned commit. The Vite findings use direct source inspection of the custom plugin, generic transforms, built-in plugin, claim aggregation, and the focused `custom-server-function` prototype source. No E2E result is used for the conclusion.

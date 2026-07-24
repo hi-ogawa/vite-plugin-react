@@ -188,11 +188,11 @@ These fields are present directly in the PR's runtime callback contract and gene
 
 An exact capture count is not required for transport. `hasBoundArgs` establishes the one-slot boundary, and decrypting that slot yields the complete capture array to key and spread. A count would only support Next.js's additional generated/runtime invariant that checks the decrypted array length ([Next.js validation](https://github.com/vercel/next.js/blob/153bf8ac5fa00888ef5fbb2b65cac12f0942a44f/packages/next/src/server/use-cache/use-cache-wrapper.ts#L1980-L2003)). This research does not find a behavioral reason to extend the public transform ABI for that diagnostic.
 
-The completed [mixed-directive composition research](./FINDINGS-MIXED-DIRECTIVE-COMPOSITION.md) establishes a cache-before-server ordering contract for the current server-local example. That result does not change the transport shape once a cached wrapper and claim have been produced. A transport plugin should preserve the same ordering when it handles inline cache functions in a module-level `"use server"` file.
+The completed [mixed-directive composition research](./FINDINGS-MIXED-DIRECTIVE-COMPOSITION.md) shows that independent complete transforms cannot assign consistent syntax and reference ownership when a module-level `"use server"` default is overridden by an inline custom directive. That result does not change the transport shape once a cached wrapper and claim have been produced. An external transport plugin is sufficient for modules and inline references it owns independently, while mixed-role modules require the shared classification and ownership handoff described there.
 
 ## Smallest Integration Change
 
-No new plugin-rsc core API is required. Add one framework-owned cache transport plugin, modeled on `examples/custom-server-function`, with this composition:
+No new plugin-rsc core API is required for the two unmixed transport cases in this note. Add one framework-owned cache transport plugin, modeled on `examples/custom-server-function`, with this composition:
 
 1. Obtain `manager` through `getPluginApi()` and resolve the module's server-reference key.
 2. In the RSC environment, apply `transformWrapExport` to module-level `"use cache"` modules and `transformHoistInlineDirective` to inline cache functions.
