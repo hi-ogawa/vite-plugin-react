@@ -11,6 +11,8 @@
 
 - [FINDINGS.md](./FINDINGS.md): completed first-pass transform comparison.
 - [FINDINGS-STABLE-CACHE-IDENTITY.md](./FINDINGS-STABLE-CACHE-IDENTITY.md): completed stable-identity follow-up.
+- [FINDINGS-MIXED-DIRECTIVE-COMPOSITION.md](./FINDINGS-MIXED-DIRECTIVE-COMPOSITION.md): completed mixed-directive composition analysis.
+- [FINDINGS-CACHE-SERVER-REFERENCE-TRANSPORT.md](./FINDINGS-CACHE-SERVER-REFERENCE-TRANSPORT.md): completed cache Server Reference transport analysis.
 - [VINEXT-CONTEXT.md](./VINEXT-CONTEXT.md): completed Vinext compatibility context.
 - [SERVER-FUNCTION-EXTENSIBILITY.md](./SERVER-FUNCTION-EXTENSIBILITY.md): focused implementation analysis and API proposal.
 - [VINEXT-SERVER-REFERENCE-PRESERVATION.md](./VINEXT-SERVER-REFERENCE-PRESERVATION.md): completed cache-replay preservation analysis.

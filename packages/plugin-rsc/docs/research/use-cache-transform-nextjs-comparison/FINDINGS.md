@@ -215,16 +215,10 @@ The runtime callback already receives the generated hoist name, and the surround
 ## Completed Follow-Ups
 
 - [Stability across builds, HMR, deployments, persistent stores, and distributed handlers](./FINDINGS-STABLE-CACHE-IDENTITY.md).
+- [Mixed-directive composition between module-level `"use server"` and inline `"use cache"`](./FINDINGS-MIXED-DIRECTIVE-COMPOSITION.md).
+- [Cross-environment Server Reference transport for module-level and inline cached functions](./FINDINGS-CACHE-SERVER-REFERENCE-TRANSPORT.md).
 
 ## Planned Transform Follow-Ups
-
-### Mixed-directive Composition
-
-Research whether Next.js processes module-level `"use server"` and inline `"use cache"` through one shared traversal, which directive combinations are legal, and how wrapping, hoisting, export generation, and validation interact. Compare that output with applying independent Vite `"use server"` and `"use cache"` transforms in different orders, including whether the first transform hides directives or exports needed by the second. A representative real-world case is [`app/[locale]/category/actions.ts:19`](https://github.com/vercel-partner-solutions/the-platform-press/blob/0fdee98ad98766f36baf948a48d0df5705b27811/app/%5Blocale%5D/category/actions.ts#L19).
-
-Deliverable: `FINDINGS-MIXED-DIRECTIVE-COMPOSITION.md` containing an equivalent fixture matrix, normalized one-pass and composed-pass outputs, transform-order failure modes, and a recommendation on whether Vite needs one shared traversal, a directive-neutral intermediate representation, or stricter composition contracts between existing transforms.
-
-This track excludes cache storage behavior and broad syntax coverage unless a syntax form demonstrates a composition problem.
 
 ### Broader Transform Surface
 
@@ -242,22 +236,10 @@ Deliverable: `FINDINGS-TRANSFORM-VALIDATION.md` containing an invalid-input fixt
 
 This track excludes framework cache policy validation and comprehensive diagnostic text matching.
 
-## Planned Integration Follow-Up
-
-### Server-reference Transport
-
-Research cross-environment server-reference registration and protected bound arguments for module-level cached exports imported by Client Components and inline cached closures passed through Flight. Focus on which wrapper, identity, parameter shape, and capture metadata must be produced by the transform versus which proxy, manifest, encryption, and resolution steps can reuse existing `"use server"` orchestration.
-
-Deliverable: `FINDINGS-CACHE-SERVER-REFERENCE-TRANSPORT.md` containing normalized Next.js and Vite pipelines, module and inline fixture comparisons, exact wrapper-registration and encrypted-binding order, a transform-versus-orchestration responsibility matrix, an assessment of whether PR #1246 supplies the complete transform ABI, and the smallest integration API or composition change for any demonstrated gap. End with a narrowly specified development-and-build E2E proof rather than implementing the cache runtime in the research note.
-
-This track excludes cache result serialization, replay, storage, invalidation, and handler policy unless one requires additional transform-produced information.
-
 ## Research Order
 
-1. Mixed-directive composition, because it determines whether later work can assume independent transforms are composable.
-2. Server-reference transport, because it exercises the generated identity, wrapped export, parameter metadata, and protected capture boundary together.
-3. Broader transform surface, once the composition architecture is understood.
-4. Transform validation, after supported semantics and intentional exclusions are known.
+1. Broader transform surface, now that composition and transport responsibilities are understood.
+2. Transform validation, after supported semantics and intentional exclusions are known.
 
 ## Excluded Runtime Observations
 
