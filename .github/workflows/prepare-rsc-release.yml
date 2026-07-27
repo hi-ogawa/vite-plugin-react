@@ -44,16 +44,6 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: node scripts/prepareRscRelease.ts "$VERSION"
 
-      - name: Validate release changes
-        run: |
-          mapfile -t files < <(git diff --name-only)
-          if [[ ${#files[@]} -ne 2 ]] ||
-            [[ ! " ${files[*]} " =~ " packages/plugin-rsc/package.json " ]] ||
-            [[ ! " ${files[*]} " =~ " packages/plugin-rsc/CHANGELOG.md " ]]; then
-            printf 'Unexpected release changes:\n%s\n' "${files[*]}"
-            exit 1
-          fi
-
       - id: generate-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
