@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 function main() {
   const [path, version] = process.argv.slice(2)
   if (!path || !version) {
-    throw new Error('Usage: node scripts/extractChangelog.ts <path> <version>')
+    throw new Error('Usage: node scripts/extract-changelog.ts <path> <version>')
   }
 
   const sections = readFileSync(path, 'utf-8').split(/^## /m).slice(1)
