@@ -156,16 +156,31 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
 
-      - name: Push release tag
-        env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-          VERSION: ${{ needs.detect-rsc-release.outputs.version }}
+      - name: Create GitHub release
         run: |
           TAG="plugin-rsc@$VERSION"
-          git tag "$TAG" "$GITHUB_SHA"
-          git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$TAG"
+          node -e '
+            const fs = require("node:fs")
+            const changelog = fs.readFileSync("packages/plugin-rsc/CHANGELOG.md", "utf8")
+            const sections = changelog.split(/^## /m).slice(1)
+            const section = sections.find((section) => section.split("\n", 1)[0].includes(`[${process.env.VERSION}](`))
+            if (!section) throw new Error(`Missing changelog entry for ${process.env.VERSION}`)
+            const notes = section.split("\n").slice(1).join("\n").trim()
+            if (!notes) throw new Error(`Empty changelog entry for ${process.env.VERSION}`)
+            fs.writeFileSync(process.env.NOTES_FILE, `${notes}\n`)
+          '
 
-      - uses: ArnaudBarre/github-release@4fa6eafe8e2449c7c1c5a91ae50de4ee34db0b40 # v1.5.0
-        with:
-          path: packages/plugin-rsc/CHANGELOG.md
-          tag-name: plugin-rsc@${{ needs.detect-rsc-release.outputs.version }}
+          prerelease=()
+          if [[ "${VERSION%%+*}" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
+
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes-file "$NOTES_FILE" \
+            "${prerelease[@]}"
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          NOTES_FILE: ${{ runner.temp }}/plugin-rsc-release-notes.md
+          VERSION: ${{ needs.detect-rsc-release.outputs.version }}
