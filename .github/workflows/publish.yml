@@ -159,16 +159,7 @@ jobs:
       - name: Create GitHub release
         run: |
           TAG="plugin-rsc@$VERSION"
-          node -e '
-            const fs = require("node:fs")
-            const changelog = fs.readFileSync("packages/plugin-rsc/CHANGELOG.md", "utf8")
-            const sections = changelog.split(/^## /m).slice(1)
-            const section = sections.find((section) => section.split("\n", 1)[0].includes(`[${process.env.VERSION}](`))
-            if (!section) throw new Error(`Missing changelog entry for ${process.env.VERSION}`)
-            const notes = section.split("\n").slice(1).join("\n").trim()
-            if (!notes) throw new Error(`Empty changelog entry for ${process.env.VERSION}`)
-            fs.writeFileSync(process.env.NOTES_FILE, `${notes}\n`)
-          '
+          node scripts/extractChangelog.ts packages/plugin-rsc/CHANGELOG.md "$VERSION" > "$NOTES_FILE"
 
           prerelease=()
           if [[ "${VERSION%%+*}" == *-* ]]; then

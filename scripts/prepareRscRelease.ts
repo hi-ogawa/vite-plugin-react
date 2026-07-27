@@ -1,11 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { generateChangelog } from '@vitejs/release-scripts'
+import * as semver from 'semver'
 
 async function main() {
   const version = process.argv[2]
   const pkgPath = 'packages/plugin-rsc/package.json'
 
-  if (!version || !isValidSemver(version)) {
+  if (!version || semver.valid(version) !== version) {
     throw new Error(`Invalid version: ${version || '(missing)'}`)
   }
 
@@ -23,20 +24,7 @@ async function main() {
   })
 }
 
-function isValidSemver(version: string) {
-  const match = version.match(
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
-  )
-  if (!match) return false
-
-  return !match[4]
-    ?.split('.')
-    .some(
-      (identifier) =>
-        /^\d+$/.test(identifier) &&
-        identifier.length > 1 &&
-        identifier.startsWith('0'),
-    )
-}
-
-main()
+main().catch((error) => {
+  console.error('Error preparing RSC release:', error)
+  process.exit(1)
+})
