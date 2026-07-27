@@ -42,7 +42,7 @@ jobs:
       - name: Prepare release
         env:
           VERSION: ${{ inputs.version }}
-        run: pnpm prepare-rsc-release "$VERSION"
+        run: node scripts/prepareRscRelease.ts "$VERSION"
 
       - name: Validate release changes
         run: |
